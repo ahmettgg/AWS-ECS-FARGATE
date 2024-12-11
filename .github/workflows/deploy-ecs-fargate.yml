@@ -53,9 +53,9 @@ jobs:
         working-directory: ./tf-folder
 
       # Terraform Apply (Otomatik Onay)
-      - name: Terraform Apply
-        run: terraform apply -auto-approve tfplan
-        working-directory: ./tf-folder
+      # - name: Terraform Apply
+      #   run: terraform apply -auto-approve tfplan
+      #   working-directory: ./tf-folder
 
       # Terraform Destroy (Otomatik Onay), sadece onay verilirse çalışacak. NOT: Bu aşama sadece deneme amacıyla yazıldı.
       - name: Terraform Destroy
