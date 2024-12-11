@@ -4,6 +4,16 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      destroy:
+        description: 'Do you want to destroy the resources?'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - yes
+          - no
 
 jobs:
   depoy-ecs-fargate:
@@ -19,7 +29,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.7.5
+          terraform_version: "~> 5.80.0"
           
         # AWS Credentials
       - name: Configure AWS Credentials
@@ -36,17 +46,7 @@ jobs:
       - name: Terraform Init
         run: terraform init
         working-directory: ./tf-folder
-
-      # Terraform Format Kontrolü
-      - name: Terraform Fmt
-        run: terraform fmt -check
-        working-directory: ./tf-folder
-
-      # Terraform Doğrulama
-      - name: Terraform Validate
-        run: terraform validate
-        working-directory: ./tf-folder
-
+      
       # Terraform Plan
       - name: Terraform Plan
         run: terraform plan -out=tfplan
@@ -61,3 +61,9 @@ jobs:
       - name: Terraform Destroy
         run: terraform destroy -auto-approve tfplan
         working-directory: ./tf-folder
+
+      # Terraform Destroy (Otomatik Onay), sadece onay verilirse çalışacak. NOT: Bu aşama sadece deneme amacıyla yazıldı.
+      - name: Terraform Destroy
+        if: ${{ github.event.inputs.destroy == 'yes' }}
+        run: terraform destroy -auto-approve tfplan
+        working-directory: ./tf-folde

@@ -1,3 +1,19 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.80.0"
+    }
+  }
+  backend "s3" {
+    bucket         = "tf-remote-s3-bucket-ecs-fargate-aws"
+    key            = "env/dev/tf-remote-backend.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "tf-s3-app-lock"
+    encrypt        = true
+  }
+}
+
 provider "aws" {
   region = "us-east-1"
 }
