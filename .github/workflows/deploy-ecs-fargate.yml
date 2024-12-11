@@ -6,7 +6,8 @@ on:
       - main
 
 jobs:
-  terraform:
+  depoy-ecs-fargate:
+    name: Terraform Deployment
     runs-on: ubuntu-latest
 
     steps:
@@ -14,7 +15,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      # AWS Credentials
+      # Terraform Kurulumu
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 5.80.0
+          
+        # AWS Credentials
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
@@ -22,24 +29,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      # Terraform Kurulumu
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.6
+      #Terraform Init
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./tf-folder
 
       # Terraform Format Kontrolü
       - name: Terraform Fmt
         run: terraform fmt -check
+        working-directory: ./tf-folder
 
       # Terraform Doğrulama
       - name: Terraform Validate
         run: terraform validate
+        working-directory: ./tf-folder
 
       # Terraform Plan
       - name: Terraform Plan
         run: terraform plan -out=tfplan
+        working-directory: ./tf-folder
 
       # Terraform Apply (Otomatik Onay)
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
+        working-directory: ./tf-folder
