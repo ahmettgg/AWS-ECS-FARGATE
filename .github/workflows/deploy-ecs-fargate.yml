@@ -32,24 +32,24 @@ jobs:
       #Terraform Init
       - name: Terraform Init
         run: terraform init
-        working-directory: ./tf-folder
+        working-directory: ./AWS-ECS-FARGATE/tf-folder
 
       # Terraform Format Kontrolü
       - name: Terraform Fmt
         run: terraform fmt -check
-        working-directory: ./tf-folder
+        working-directory: ../AWS-ECS-FARGATE/tf-folder
 
       # Terraform Doğrulama
       - name: Terraform Validate
         run: terraform validate
-        working-directory: ./tf-folder
+        working-directory: ./AWS-ECS-FARGATE/tf-folder
 
       # Terraform Plan
       - name: Terraform Plan
         run: terraform plan -out=tfplan
-        working-directory: ./tf-folder
+        working-directory: ./AWS-ECS-FARGATE/tf-folder
 
       # Terraform Apply (Otomatik Onay)
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
-        working-directory: ./tf-folder
+        working-directory: ./AWS-ECS-FARGATE/tf-folderr
