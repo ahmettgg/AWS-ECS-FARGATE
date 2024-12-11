@@ -58,7 +58,8 @@ jobs:
       #   working-directory: ./tf-folder
 
       - name: Debug Destroy Input
-        run: "Destroy input is: ${{ github.event.inputs.destroy }}"
+        run: |
+          echo "Destroy input is: ${{ github.event.inputs.destroy }}"
 
       # Terraform Destroy (Otomatik Onay), sadece onay verilirse çalışacak. NOT: Bu aşama sadece deneme amacıyla yazıldı.
       - name: Terraform Destroy
