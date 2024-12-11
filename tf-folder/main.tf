@@ -35,10 +35,10 @@ resource "aws_lb_listener" "https" {
       content_type = "text/plain"
       message_body = "404 Not Found"
       status_code  = "404"
-    # type             = "forward"
-    # target_group_arn = aws_lb_target_group.nginx_tg.id
+      # type             = "forward"
+      # target_group_arn = aws_lb_target_group.nginx_tg.id
+    }
   }
-}
 }
 
 
@@ -70,8 +70,8 @@ resource "aws_lb_listener_rule" "nginx_rule" {
       values = ["nginx.ahmetdevops.click"]
     }
   }
-  
-  }
+
+}
 
 
 
@@ -89,8 +89,8 @@ resource "aws_lb_listener_rule" "apache_rule" {
       values = ["apache.ahmetdevops.click"]
     }
   }
-  
-  }
+
+}
 
 # Wordpress için yönlendirme
 resource "aws_lb_listener_rule" "wordpress_rule" {
@@ -106,8 +106,8 @@ resource "aws_lb_listener_rule" "wordpress_rule" {
       values = ["wordpress.ahmetdevops.click"]
     }
   }
-  
-  }
+
+}
 
 
 
@@ -199,7 +199,7 @@ resource "aws_route53_record" "nginx_lb_dns" {
 }
 resource "aws_route53_record" "apache_lb_dns" {
   zone_id = data.aws_route53_zone.selected.zone_id # Mevcut Hosted Zone ID
-  name    = "apache.ahmetdevops.click"              # İstediğiniz domain ya da alt domain
+  name    = "apache.ahmetdevops.click"             # İstediğiniz domain ya da alt domain
   type    = "A"
 
   alias {
@@ -211,7 +211,7 @@ resource "aws_route53_record" "apache_lb_dns" {
 
 resource "aws_route53_record" "wordpress_lb_dns" {
   zone_id = data.aws_route53_zone.selected.zone_id # Mevcut Hosted Zone ID
-  name    = "wordpress.ahmetdevops.click"              # İstediğiniz domain ya da alt domain
+  name    = "wordpress.ahmetdevops.click"          # İstediğiniz domain ya da alt domain
   type    = "A"
 
   alias {

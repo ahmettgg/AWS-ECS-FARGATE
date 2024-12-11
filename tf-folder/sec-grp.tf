@@ -16,7 +16,7 @@ resource "aws_security_group" "ecs_sg" {
     protocol        = "tcp"
     security_groups = [aws_security_group.alb_sg.id]
   }
- 
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -42,7 +42,7 @@ resource "aws_security_group" "alb_sg" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"] # veya spesifik CIDR blokları
   }
-  
+
   egress {
     from_port   = 0
     to_port     = 0

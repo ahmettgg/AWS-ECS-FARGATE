@@ -19,6 +19,6 @@ output "domain_name-apache" {
   description = "The domain name for the application"
 }
 output "domain_name-wordpress" {
-  value       ="wordpress.ahmetdevops.click" # Statik alan adı
+  value       = "wordpress.ahmetdevops.click" # Statik alan adı
   description = "The domain name for the application"
 }
