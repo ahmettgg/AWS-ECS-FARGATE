@@ -57,12 +57,17 @@ jobs:
       #   run: terraform apply -auto-approve tfplan
       #   working-directory: ./tf-folder
 
-      - name: Debug Destroy Input
-        run: |
-          echo "Destroy input is: ${{ github.event.inputs.destroy }}"
-
-      # Terraform Destroy (Otomatik Onay), sadece onay verilirse çalışacak. NOT: Bu aşama sadece deneme amacıyla yazıldı.
-      - name: Terraform Destroy
-        if: ${{ github.event.inputs.destroy == 'yes' }}
+      # Terraform Destroy (Otomatik Onay)
+      - name: Terraform Apply
         run: terraform destroy -auto-approve
         working-directory: ./tf-folder
+
+      # - name: Debug Destroy Input
+      #   run: |
+      #     echo "Destroy input is: ${{ github.event.inputs.destroy }}"
+
+      # # Terraform Destroy (Otomatik Onay), sadece onay verilirse çalışacak. NOT: Bu aşama sadece deneme amacıyla yazıldı.
+      # - name: Terraform Destroy
+      #   if: ${{ github.event.inputs.destroy == 'yes' }}
+      #   run: terraform destroy -auto-approve
+      #   working-directory: ./tf-folder
