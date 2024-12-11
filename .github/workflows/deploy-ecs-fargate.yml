@@ -29,27 +29,30 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      #Terraform Init
+      - name: List files in tf-folder
+        run: ls -l ./tf-folder
+        
+        #Terraform Init
       - name: Terraform Init
         run: terraform init
-        working-directory: /tf-folder
+        working-directory: ./tf-folder
 
       # Terraform Format Kontrolü
       - name: Terraform Fmt
         run: terraform fmt -check
-        working-directory: /tf-folder
+        working-directory: ./tf-folder
 
       # Terraform Doğrulama
       - name: Terraform Validate
         run: terraform validate
-        working-directory: /tf-folder
+        working-directory: ./tf-folder
 
       # Terraform Plan
       - name: Terraform Plan
         run: terraform plan -out=tfplan
-        working-directory: /tf-folder
+        working-directory: ./tf-folder
 
       # Terraform Apply (Otomatik Onay)
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
-        working-directory: /tf-folderr
+        working-directory: ./tf-folder
