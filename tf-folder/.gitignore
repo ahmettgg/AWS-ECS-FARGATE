@@ -1,6 +1,6 @@
 # Terraform local state files
-*.tfstate
-*.tfstate.*
+# *.tfstate
+# *.tfstate.*
 
 # Crash log files
 crash.log
@@ -22,9 +22,9 @@ terraform.rc
 terraform_*.zip
 
 # Lock file
-.terraform.lock.hcl
+# .terraform.lock.hcl
 
 # Ignore backup files created by Terraform
-*.backup
+# *.backup
 
 
