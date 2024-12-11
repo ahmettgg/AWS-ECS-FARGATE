@@ -56,3 +56,8 @@ jobs:
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
         working-directory: ./tf-folder
+      
+       ## Terraform Apply (Otomatik Onay)
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve tfplan
+        working-directory: ./tf-folder
