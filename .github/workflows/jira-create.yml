@@ -34,7 +34,7 @@ jobs:
           echo "new_label=${{ github.event.label.name }}" >> $GITHUB_OUTPUT
 
       ####################################################################
-      # 1) OPENED → Jira Task oluştur
+      # 1) OPENED → Jira Task oluştur + GitHub'a label ve link yorumu
       ####################################################################
       - name: Create Jira issue (on opened)
         id: create
@@ -110,7 +110,7 @@ jobs:
             });
 
       ####################################################################
-      # 2) EDITED → Jira summary/description güncelle
+      # 2) EDITED → Jira summary/description güncelle (ADF)
       ####################################################################
       - name: Update Jira on edit
         if: github.event_name == 'issues' && github.event.action == 'edited'
@@ -121,7 +121,7 @@ jobs:
           GH_URL:   ${{ github.event.issue.html_url }}
         run: |
           set -e
-          if [ -z "$JIRA_KEY" ]; then exit 0; fi
+          [ -z "$JIRA_KEY" ] && exit 0
           jq -n \
             --arg summary "$GH_TITLE" \
             --arg url "$GH_URL" \
@@ -151,7 +151,7 @@ jobs:
           CODE="${RESP##*:}"; echo "HTTP $CODE"; [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]
 
       ####################################################################
-      # 3) CLOSED / REOPENED / LABELED / ASSIGNED → Transition
+      # 3) CLOSED → Jira DONE
       ####################################################################
       - name: Transition to DONE (on close)
         if: github.event_name == 'issues' && github.event.action == 'closed'
@@ -168,11 +168,14 @@ jobs:
             --data "$(jq -n --arg id "$ID" '{transition:{id:$id}}')" \
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
 
-      - name: Transition to IN PROGRESS (on reopen/label/assign)
+      ####################################################################
+      # 4) REOPENED veya LABELED(in-progress) → Jira IN PROGRESS
+      #    (ASSIGNED BURADA YOK! Assign ayrı adımda)
+      ####################################################################
+      - name: Transition to IN PROGRESS (on reopen/label)
         if: >
           (github.event_name == 'issues' && github.event.action == 'reopened')
           || (github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'in-progress')
-          || (github.event_name == 'issues' && github.event.action == 'assigned')
         env:
           JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
         run: |
@@ -187,7 +190,36 @@ jobs:
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
 
       ####################################################################
-      # 4) COMMENT → Mirror to Jira (created + edited)
+      # 5) ASSIGNED → Sadece assignee Jira'ya aynalansın (status değişmez)
+      ####################################################################
+      - name: Mirror assignee to Jira (on assigned)
+        if: github.event_name == 'issues' && github.event.action == 'assigned'
+        env:
+          JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
+          GH_ASSIGNEE: ${{ github.event.assignee.login }}
+          JIRA_USER_MAP: ${{ secrets.JIRA_USER_MAP }}
+        run: |
+          set -e
+          [ -z "$JIRA_KEY" ] && exit 0
+
+          if [ -z "$JIRA_USER_MAP" ]; then
+            echo "No JIRA_USER_MAP configured"; exit 0
+          fi
+
+          ACCOUNT_ID=$(echo "$JIRA_USER_MAP" | jq -r --arg u "$GH_ASSIGNEE" '.[$u] // empty')
+          if [ -z "$ACCOUNT_ID" ]; then
+            echo "No mapping for $GH_ASSIGNEE in JIRA_USER_MAP"; exit 0
+          fi
+
+          RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "$(jq -n --arg id "$ACCOUNT_ID" '{accountId:$id}')" \
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/assignee")
+          CODE="${RESP##*:}"; echo "Assign HTTP $CODE"
+          [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]
+
+      ####################################################################
+      # 6) COMMENT → Mirror to Jira (created + edited)
       ####################################################################
       - name: Mirror comment to Jira
         if: github.event_name == 'issue_comment' && (github.event.action == 'created' || github.event.action == 'edited')
