@@ -12,20 +12,17 @@ jobs:
         id: payload
         run: |
           TITLE="${{ github.event.issue.title }}"
-          BODY=$(printf "%s\n\nGitHub Issue: %s\nRepo: %s\nAuthor: %s" \
-            "${{ github.event.issue.body }}" \
-            "${{ github.event.issue.html_url }}" \
-            "${{ github.repository }}" \
-            "${{ github.actor }}")
+          BODY=$(echo "${{ github.event.issue.body }}" | jq -Rs .)
+          URL="${{ github.event.issue.html_url }}"
 
-          ITYPE="Bug"
-          echo "::set-output name=data::$(jq -n \
+          jq -n \
             --arg project "${{ secrets.JIRA_PROJECT }}" \
             --arg summary "$TITLE" \
-            --arg desc "$BODY" \
-            --arg itype "$ITYPE" \
-            '{fields:{project:{key:$project},summary:$summary,description:$desc,issuetype:{name:$itype}}}')"
+            --arg desc "$(echo -e "GitHub Issue: $URL\n\nBody:\n${{ github.event.issue.body }}")" \
+            --arg itype "Bug" \
+            '{fields:{project:{key:$project},summary:$summary,description:$desc,issuetype:{name:$itype}}}' > payload.json
 
+          echo "payload=$(cat payload.json)" >> $GITHUB_OUTPUT
       - name: Create Jira issue
         id: create
         env:
