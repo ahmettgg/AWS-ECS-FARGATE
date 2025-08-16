@@ -8,21 +8,41 @@ jobs:
   create-jira:
     runs-on: ubuntu-latest
     steps:
-      - name: Build Jira payload
-        id: payload
+      - name: Build Jira payload (to file)
+        id: build
+        env:
+          GH_TITLE: ${{ github.event.issue.title }}
+          GH_BODY:  ${{ github.event.issue.body }}
+          GH_URL:   ${{ github.event.issue.html_url }}
+          GH_REPO:  ${{ github.repository }}
+          GH_ACTOR: ${{ github.actor }}
+          JIRA_PROJECT: ${{ secrets.JIRA_PROJECT }}
+          JIRA_ISSUE_TYPE: ${{ secrets.JIRA_ISSUE_TYPE }} # yoksa aşağıda Bug varsayılanı
         run: |
-          TITLE="${{ github.event.issue.title }}"
-          BODY=$(echo "${{ github.event.issue.body }}" | jq -Rs .)
-          URL="${{ github.event.issue.html_url }}"
+          set -e
 
+          # Issue type yoksa Bug kullan; Team-managed'da Bug yoksa Secret'ta Task ver
+          ITYPE="${JIRA_ISSUE_TYPE:-Bug}"
+
+          # Açıklama metnini oluştur
+          DESC_HEADER="Kaynak: ${GH_URL}\nRepo: ${GH_REPO}\nAuthor: ${GH_ACTOR}\n\nAçıklama:\n"
+          DESC_FULL="${DESC_HEADER}${GH_BODY}"
+
+          # JSON'u güvenle jq ile üret ve dosyaya yaz
           jq -n \
-            --arg project "${{ secrets.JIRA_PROJECT }}" \
-            --arg summary "$TITLE" \
-            --arg desc "$(echo -e "GitHub Issue: $URL\n\nBody:\n${{ github.event.issue.body }}")" \
-            --arg itype "Bug" \
-            '{fields:{project:{key:$project},summary:$summary,description:$desc,issuetype:{name:$itype}}}' > payload.json
+            --arg project "$JIRA_PROJECT" \
+            --arg summary "$GH_TITLE" \
+            --arg desc "$DESC_FULL" \
+            --arg itype "$ITYPE" \
+            '{fields:{
+              project:{key:$project},
+              summary:$summary,
+              description:$desc,
+              issuetype:{name:$itype}
+            }}' > payload.json
 
-          echo "payload=$(cat payload.json)" >> $GITHUB_OUTPUT
+          echo "payload_path=payload.json" >> "$GITHUB_OUTPUT"
+
       - name: Create Jira issue
         id: create
         env:
@@ -30,25 +50,24 @@ jobs:
           JIRA_EMAIL:     ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
         run: |
+          set -e
           RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
             -H "Content-Type: application/json" \
-            --data '${{ steps.payload.outputs.data }}' \
+            --data @"${{ steps.build.outputs.payload_path }}" \
             "$JIRA_BASE_URL/rest/api/3/issue")
           BODY="${RESP%:*}"
           CODE="${RESP##*:}"
           echo "HTTP $CODE"
           echo "$BODY" > response.json
+          cat response.json
           if [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]; then
             KEY=$(jq -r '.key' response.json)
-            echo "Created $KEY"
-            echo "issue_key=$KEY" >> $GITHUB_OUTPUT
+            echo "issue_key=$KEY" >> "$GITHUB_OUTPUT"
           else
-            echo "Jira create failed:"
-            cat response.json
             exit 1
           fi
 
-      - name: Comment back on GitHub issue
+      - name: Comment back on GitHub issue (link Jira)
         if: steps.create.outputs.issue_key != ''
         uses: actions/github-script@v7
         with:
