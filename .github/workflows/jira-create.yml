@@ -25,7 +25,14 @@ jobs:
             '{fields:{
               project:{key:$project},
               summary:$summary,
-              description:$desc,
+              description:{
+                type:"doc",
+                version:1,
+                content:[{
+                  type:"paragraph",
+                  content:[{type:"text", text:$desc}]
+                }]
+              },
               issuetype:{name:$itype}
             }}' > payload.json
 
@@ -52,8 +59,8 @@ jobs:
 
           if [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]; then
             KEY=$(jq -r '.key' response.json)
-            echo "Jira Task created: $KEY"
+            echo "✅ Jira Task created: $KEY"
           else
-            echo "Jira create failed"
+            echo "❌ Jira create failed"
             exit 1
           fi
