@@ -27,11 +27,11 @@ jobs:
         id: vars
         run: |
           set -e
-          # Jira key'i label'lardan çek (jira:AH-123 gibi)
+          # jira:AH-123 etiketinden Jira key çek
           KEY=$(echo '${{ toJson(github.event.issue.labels) }}' | jq -r '.[]?.name | select(startswith("jira:")) | split(":")[1]' | head -n1)
           echo "jira_key=$KEY" >> $GITHUB_OUTPUT
           echo "event=${{ github.event_name }}/${{ github.event.action }}" >> $GITHUB_OUTPUT
-          # Labeled event'te gelen label adı (yoksa boş)
+          # labeled event'te gelen label adı
           echo "new_label=${{ github.event.label.name }}" >> $GITHUB_OUTPUT
 
       ####################################################################
@@ -46,18 +46,27 @@ jobs:
           GH_URL:   ${{ github.event.issue.html_url }}
         run: |
           set -e
-          DESC="GitHub Issue: ${GH_URL}\n\n${GH_BODY}"
+          # ADF: 1. paragrafta link, 2. paragrafta body
           jq -n \
             --arg project "$JIRA_PROJECT" \
             --arg summary "$GH_TITLE" \
-            --arg desc "$DESC" \
+            --arg url "$GH_URL" \
+            --arg body "$GH_BODY" \
             '{fields:{
               project:{key:$project},
               summary:$summary,
               description:{
                 type:"doc",
                 version:1,
-                content:[{type:"paragraph",content:[{type:"text",text:$desc}]}]
+                content:[
+                  { type:"paragraph", content:[
+                      {type:"text", text:"GitHub Issue: "},
+                      {type:"text", text:$url, marks:[{type:"link", attrs:{href:$url}}]}
+                  ]},
+                  { type:"paragraph", content:[
+                      {type:"text", text:$body}
+                  ]}
+                ]
               },
               issuetype:{name:"Task"}
             }}' > payload.json
@@ -100,7 +109,7 @@ jobs:
             });
 
       ####################################################################
-      # 2) EDITED → Jira summary/description güncelle
+      # 2) EDITED → Jira summary/description güncelle (ADF)
       ####################################################################
       - name: Update Jira on edit
         if: github.event_name == 'issues' && github.event.action == 'edited'
@@ -112,13 +121,25 @@ jobs:
         run: |
           set -e
           if [ -z "$JIRA_KEY" ]; then echo "No jira:KEY label found"; exit 0; fi
-          DESC="GitHub Issue: ${GH_URL}\n\n${GH_BODY}"
           jq -n \
             --arg summary "$GH_TITLE" \
-            --arg desc "$DESC" \
+            --arg url "$GH_URL" \
+            --arg body "$GH_BODY" \
             '{fields:{
               summary:$summary,
-              description:{type:"doc",version:1,content:[{type:"paragraph",content:[{type:"text",text:$desc}]}]}
+              description:{
+                type:"doc",
+                version:1,
+                content:[
+                  { type:"paragraph", content:[
+                      {type:"text", text:"GitHub Issue: "},
+                      {type:"text", text:$url, marks:[{type:"link", attrs:{href:$url}}]}
+                  ]},
+                  { type:"paragraph", content:[
+                      {type:"text", text:$body}
+                  ]}
+                ]
+              }
             }}' > patch.json
 
           RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
@@ -190,7 +211,7 @@ jobs:
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
 
       ####################################################################
-      # 5) COMMENT → GitHub yorumunu Jira'ya kopyala
+      # 5) COMMENT → GitHub yorumunu Jira'ya kopyala (ADF + link)
       ####################################################################
       - name: Mirror comment to Jira
         if: github.event_name == 'issue_comment' && github.event.action == 'created'
@@ -202,9 +223,26 @@ jobs:
         run: |
           set -e
           if [ -z "$JIRA_KEY" ]; then echo "No jira:KEY label found"; exit 0; fi
-          TXT="GitHub comment by ${AUTHOR}: ${CMT_URL}\n\n${CMT}"
-          jq -n --arg t "$TXT" \
-            '{body:{type:"doc",version:1,content:[{type:"paragraph",content:[{type:"text",text:$t}]}]}}' > c.json
+          jq -n \
+            --arg author "$AUTHOR" \
+            --arg url "$CMT_URL" \
+            --arg cmt "$CMT" \
+            '{
+              body:{
+                type:"doc", version:1, content:[
+                  { type:"paragraph", content:[
+                      {type:"text", text:"GitHub comment by "},
+                      {type:"text", text:$author},
+                      {type:"text", text:": "},
+                      {type:"text", text:$url, marks:[{type:"link", attrs:{href:$url}}]}
+                  ]},
+                  { type:"paragraph", content:[
+                      {type:"text", text:$cmt}
+                  ]}
+                ]
+              }
+            }' > c.json
+
           RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
             -H "Content-Type: application/json" \
             --data @c.json \
