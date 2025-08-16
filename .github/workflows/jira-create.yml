@@ -189,7 +189,32 @@ jobs:
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
 
       ####################################################################
-      # 5) ASSIGNED → Sadece assignee Jira'ya aynalansın (status değişmez)
+      # 5) LABELED(todo) → Jira TO DO
+      ####################################################################
+      - name: Transition to TO DO (on label todo)
+        if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'todo'
+        env:
+          JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
+        run: |
+          set -e
+          [ -z "$JIRA_KEY" ] && exit 0
+          echo "Trying to move $JIRA_KEY → TO DO"
+          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
+          echo "$LIST" | jq .
+          ID=$(echo "$LIST" | jq -r '.transitions[] | select(.name|test("(?i)^to do$")) | .id')
+          if [ -n "$ID" ]; then
+            curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data "$(jq -n --arg id "$ID" '{transition:{id:$id}}')" \
+              "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
+            echo "✅ Transitioned $JIRA_KEY to TO DO"
+          else
+            echo "⚠️ No TO DO transition available for $JIRA_KEY"
+          fi
+
+      ####################################################################
+      # 6) ASSIGNED → Mirror assignee to Jira
       ####################################################################
       - name: Mirror assignee to Jira (on assigned)
         if: github.event_name == 'issues' && github.event.action == 'assigned'
@@ -210,7 +235,6 @@ jobs:
             echo "No mapping for $GH_ASSIGNEE in JIRA_USER_MAP"; exit 0
           fi
 
-          # Jira Cloud requires PUT (POST → 405)
           RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
             -X PUT -H "Content-Type: application/json" \
             --data "$(jq -n --arg id "$ACCOUNT_ID" '{accountId:$id}')" \
@@ -219,7 +243,7 @@ jobs:
           [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]
 
       ####################################################################
-      # 6) COMMENT → Mirror to Jira (created + edited)
+      # 7) COMMENT → Mirror to Jira (created + edited)
       ####################################################################
       - name: Mirror comment to Jira
         if: github.event_name == 'issue_comment' && (github.event.action == 'created' || github.event.action == 'edited')
