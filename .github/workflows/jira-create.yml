@@ -170,7 +170,6 @@ jobs:
 
       ####################################################################
       # 4) REOPENED veya LABELED(in-progress) → Jira IN PROGRESS
-      #    (ASSIGNED BURADA YOK! Assign ayrı adımda)
       ####################################################################
       - name: Transition to IN PROGRESS (on reopen/label)
         if: >
@@ -211,8 +210,9 @@ jobs:
             echo "No mapping for $GH_ASSIGNEE in JIRA_USER_MAP"; exit 0
           fi
 
+          # Jira Cloud requires PUT (POST → 405)
           RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-            -H "Content-Type: application/json" \
+            -X PUT -H "Content-Type: application/json" \
             --data "$(jq -n --arg id "$ACCOUNT_ID" '{accountId:$id}')" \
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/assignee")
           CODE="${RESP##*:}"; echo "Assign HTTP $CODE"
