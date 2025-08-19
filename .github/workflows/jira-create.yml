@@ -34,7 +34,7 @@ jobs:
           echo "new_label=${{ github.event.label.name }}" >> $GITHUB_OUTPUT
 
       ####################################################################
-      # 1) OPENED → Jira Task oluştur + GitHub'a label ve link yorumu
+      # 1) OPENED → Jira Task oluştur (backlog’da kalır)
       ####################################################################
       - name: Create Jira issue (on opened)
         id: create
@@ -110,7 +110,7 @@ jobs:
             });
 
       ####################################################################
-      # 2) EDITED → Jira summary/description güncelle (ADF)
+      # 2) EDITED → Jira summary/description güncelle
       ####################################################################
       - name: Update Jira on edit
         if: github.event_name == 'issues' && github.event.action == 'edited'
@@ -169,12 +169,10 @@ jobs:
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
 
       ####################################################################
-      # 4) REOPENED veya LABELED(in-progress) → Jira IN PROGRESS
+      # 4) REOPENED → Jira IN PROGRESS
       ####################################################################
-      - name: Transition to IN PROGRESS (on reopen/label)
-        if: >
-          (github.event_name == 'issues' && github.event.action == 'reopened')
-          || (github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'in-progress')
+      - name: Transition to IN PROGRESS (on reopen)
+        if: github.event_name == 'issues' && github.event.action == 'reopened'
         env:
           JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
         run: |
@@ -189,32 +187,40 @@ jobs:
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
 
       ####################################################################
-      # 5) LABELED(todo) → Jira TO DO
+      # 5) LABELED → in-progress → IN PROGRESS | test → TEST/IN TEST
       ####################################################################
-      - name: Transition to TO DO (on label todo)
-        if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'todo'
+      - name: Transition to IN PROGRESS (on label in-progress)
+        if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'in-progress'
         env:
           JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
         run: |
           set -e
           [ -z "$JIRA_KEY" ] && exit 0
-          echo "Trying to move $JIRA_KEY → TO DO"
           LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
-          echo "$LIST" | jq .
-          ID=$(echo "$LIST" | jq -r '.transitions[] | select(.name|test("(?i)^to do$")) | .id')
-          if [ -n "$ID" ]; then
-            curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-              -H "Content-Type: application/json" \
-              --data "$(jq -n --arg id "$ID" '{transition:{id:$id}}')" \
-              "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
-            echo "✅ Transitioned $JIRA_KEY to TO DO"
-          else
-            echo "⚠️ No TO DO transition available for $JIRA_KEY"
-          fi
+          ID=$(echo "$LIST" | jq -r '.transitions[] | select(.name|test("(?i)^in progress$")) | .id')
+          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "$(jq -n --arg id "$ID" '{transition:{id:$id}}')" \
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
+
+      - name: Transition to TEST (on label test)
+        if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'test'
+        env:
+          JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
+        run: |
+          set -e
+          [ -z "$JIRA_KEY" ] && exit 0
+          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
+          ID=$(echo "$LIST" | jq -r '.transitions[] | select(.name|test("(?i)^(test|in test)$")) | .id')
+          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "$(jq -n --arg id "$ID" '{transition:{id:$id}}')" \
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
 
       ####################################################################
-      # 6) ASSIGNED → Mirror assignee to Jira
+      # 6) ASSIGNED → Jira assignee sync
       ####################################################################
       - name: Mirror assignee to Jira (on assigned)
         if: github.event_name == 'issues' && github.event.action == 'assigned'
@@ -225,15 +231,10 @@ jobs:
         run: |
           set -e
           [ -z "$JIRA_KEY" ] && exit 0
-
-          if [ -z "$JIRA_USER_MAP" ]; then
-            echo "No JIRA_USER_MAP configured"; exit 0
-          fi
+          [ -z "$JIRA_USER_MAP" ] && exit 0
 
           ACCOUNT_ID=$(echo "$JIRA_USER_MAP" | jq -r --arg u "$GH_ASSIGNEE" '.[$u] // empty')
-          if [ -z "$ACCOUNT_ID" ]; then
-            echo "No mapping for $GH_ASSIGNEE in JIRA_USER_MAP"; exit 0
-          fi
+          [ -z "$ACCOUNT_ID" ] && exit 0
 
           RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
             -X PUT -H "Content-Type: application/json" \
@@ -243,7 +244,7 @@ jobs:
           [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]
 
       ####################################################################
-      # 7) COMMENT → Mirror to Jira (created + edited)
+      # 7) COMMENT → Mirror to Jira
       ####################################################################
       - name: Mirror comment to Jira
         if: github.event_name == 'issue_comment' && (github.event.action == 'created' || github.event.action == 'edited')
