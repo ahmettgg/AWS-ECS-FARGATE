@@ -21,20 +21,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y jq
 
       - name: Derive vars
         id: vars
         run: |
-          set -e
+          set -Eeuo pipefail
           KEY=$(echo '${{ toJson(github.event.issue.labels) }}' \
             | jq -r '.[]?.name | select(startswith("jira:")) | split(":")[1]' | head -n1)
-          echo "jira_key=$KEY" >> $GITHUB_OUTPUT
-          echo "event=${{ github.event_name }}/${{ github.event.action }}" >> $GITHUB_OUTPUT
-          echo "new_label=${{ github.event.label.name }}" >> $GITHUB_OUTPUT
+          echo "jira_key=$KEY" >> "$GITHUB_OUTPUT"
+          echo "event=${{ github.event_name }}/${{ github.event.action }}" >> "$GITHUB_OUTPUT"
+          echo "new_label=${{ github.event.label.name }}" >> "$GITHUB_OUTPUT"
+          HAS_BUG=$(echo '${{ toJson(github.event.issue.labels) }}' \
+            | jq -r 'map(.name|ascii_downcase) | any(.=="bug")')
+          echo "has_bug=$HAS_BUG" >> "$GITHUB_OUTPUT"
 
       ####################################################################
-      # 1) OPENED → Jira Task oluştur (backlog’da kalır)
+      # 1) OPENED → Jira issue oluştur (Backlog)
       ####################################################################
       - name: Create Jira issue (on opened)
         id: create
@@ -43,13 +49,18 @@ jobs:
           GH_TITLE: ${{ github.event.issue.title }}
           GH_BODY:  ${{ github.event.issue.body }}
           GH_URL:   ${{ github.event.issue.html_url }}
+          HAS_BUG:  ${{ steps.vars.outputs.has_bug }}
         run: |
-          set -e
+          set -Eeuo pipefail
+          ITYPE="Task"
+          if [ "${HAS_BUG:-false}" = "true" ]; then ITYPE="Bug"; fi
+
           jq -n \
             --arg project "$JIRA_PROJECT" \
             --arg summary "$GH_TITLE" \
             --arg url "$GH_URL" \
-            --arg body "$GH_BODY" \
+            --arg body "${GH_BODY:-}" \
+            --arg itype "$ITYPE" \
             '{
               fields:{
                 project:{key:$project},
@@ -68,7 +79,7 @@ jobs:
                     )
                   )
                 },
-                issuetype:{name:"Task"}
+                issuetype:{name:$itype}
               }
             }' > payload.json
 
@@ -80,7 +91,7 @@ jobs:
           echo "$BODY" > response.json; echo "HTTP $CODE"; cat response.json
           [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]
           KEY=$(jq -r '.key' response.json)
-          echo "jira_key=$KEY" >> $GITHUB_OUTPUT
+          echo "jira_key=$KEY" >> "$GITHUB_OUTPUT"
 
       - name: Label GitHub issue with jira:<KEY>
         if: github.event_name == 'issues' && github.event.action == 'opened'
@@ -110,7 +121,7 @@ jobs:
             });
 
       ####################################################################
-      # 2) EDITED → Jira summary/description güncelle
+      # 2) EDITED → Summary/Description güncelle
       ####################################################################
       - name: Update Jira on edit
         if: github.event_name == 'issues' && github.event.action == 'edited'
@@ -120,12 +131,12 @@ jobs:
           GH_BODY:  ${{ github.event.issue.body }}
           GH_URL:   ${{ github.event.issue.html_url }}
         run: |
-          set -e
-          [ -z "$JIRA_KEY" ] && exit 0
+          set -Eeuo pipefail
+          [ -z "${JIRA_KEY:-}" ] && exit 0
           jq -n \
             --arg summary "$GH_TITLE" \
             --arg url "$GH_URL" \
-            --arg body "$GH_BODY" \
+            --arg body "${GH_BODY:-}" \
             '{fields:{
               summary:$summary,
               description:{
@@ -151,76 +162,102 @@ jobs:
           CODE="${RESP##*:}"; echo "HTTP $CODE"; [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]
 
       ####################################################################
-      # 3) CLOSED → Jira DONE
+      # 3) CLOSED → DONE
       ####################################################################
       - name: Transition to DONE (on close)
         if: github.event_name == 'issues' && github.event.action == 'closed'
         env:
           JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
         run: |
-          set -e
-          [ -z "$JIRA_KEY" ] && exit 0
-          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
+          set -Eeuo pipefail
+          [ -z "${JIRA_KEY:-}" ] && exit 0
+          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
           ID=$(echo "$LIST" | jq -r '.transitions[] | select(.name|test("(?i)^done$")) | .id')
-          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-            -H "Content-Type: application/json" \
+          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H "Content-Type: application/json" \
             --data "$(jq -n --arg id "$ID" '{transition:{id:$id}}')" \
-            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null || true
 
       ####################################################################
-      # 4) REOPENED → Jira IN PROGRESS
+      # 4) REOPENED → IN PROGRESS
       ####################################################################
       - name: Transition to IN PROGRESS (on reopen)
         if: github.event_name == 'issues' && github.event.action == 'reopened'
         env:
           JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
         run: |
-          set -e
-          [ -z "$JIRA_KEY" ] && exit 0
-          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
+          set -Eeuo pipefail
+          [ -z "${JIRA_KEY:-}" ] && exit 0
+          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
           ID=$(echo "$LIST" | jq -r '.transitions[] | select(.name|test("(?i)^in progress$")) | .id')
-          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-            -H "Content-Type: application/json" \
+          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H "Content-Type: application/json" \
             --data "$(jq -n --arg id "$ID" '{transition:{id:$id}}')" \
-            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null || true
 
       ####################################################################
-      # 5) LABELED → in-progress → IN PROGRESS | test → TEST/IN TEST
+      # 5) LABELED → To Do / In Progress / Test (In Test destekli)
       ####################################################################
+      - name: Transition to TO DO (on label todo)
+        if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'todo'
+        env:
+          JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
+        run: |
+          set -Eeuo pipefail
+          [ -z "${JIRA_KEY:-}" ] && exit 0
+          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
+          ID=$(echo "$LIST" | jq -r '.transitions[] | select(.name|test("(?i)^to do$")) | .id')
+          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H "Content-Type: application/json" \
+            --data "$(jq -n --arg id "$ID" '{transition:{id:$id}}')" \
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null || true
+
       - name: Transition to IN PROGRESS (on label in-progress)
         if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'in-progress'
         env:
           JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
         run: |
-          set -e
-          [ -z "$JIRA_KEY" ] && exit 0
-          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
+          set -Eeuo pipefail
+          [ -z "${JIRA_KEY:-}" ] && exit 0
+          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
           ID=$(echo "$LIST" | jq -r '.transitions[] | select(.name|test("(?i)^in progress$")) | .id')
-          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-            -H "Content-Type: application/json" \
+          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H "Content-Type: application/json" \
             --data "$(jq -n --arg id "$ID" '{transition:{id:$id}}')" \
-            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null || true
 
       - name: Transition to TEST (on label test)
         if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'test'
         env:
           JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
         run: |
-          set -e
-          [ -z "$JIRA_KEY" ] && exit 0
-          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
+          set -Eeuo pipefail
+          [ -z "${JIRA_KEY:-}" ] && exit 0
+          LIST=$(curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions")
           ID=$(echo "$LIST" | jq -r '.transitions[] | select(.name|test("(?i)^(test|in test)$")) | .id')
-          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-            -H "Content-Type: application/json" \
+          [ -n "$ID" ] && curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H "Content-Type: application/json" \
             --data "$(jq -n --arg id "$ID" '{transition:{id:$id}}')" \
-            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null || true
 
       ####################################################################
-      # 6) ASSIGNED → Jira assignee sync
+      # 6) LABELED bug → Issue type = Bug (sonradan dönüştür)
+      ####################################################################
+      - name: Convert to Bug (on label bug)
+        if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'bug'
+        env:
+          JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
+        run: |
+          set -Eeuo pipefail
+          [ -z "${JIRA_KEY:-}" ] && exit 0
+          echo '{"fields":{"issuetype":{"name":"Bug"}}}' > type.json
+          RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+            -X PUT -H "Content-Type: application/json" \
+            --data @type.json \
+            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY")
+          CODE="${RESP##*:}"; echo "Type change HTTP $CODE"
+          # Bazı şemalarda issue type değiştirme izni olmayabilir; hata olsa da job'u düşürme:
+          if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
+            echo "⚠️ Issue type change may be restricted by Jira scheme."
+          fi
+
+      ####################################################################
+      # 7) ASSIGNED → Assignee sync
       ####################################################################
       - name: Mirror assignee to Jira (on assigned)
         if: github.event_name == 'issues' && github.event.action == 'assigned'
@@ -229,13 +266,11 @@ jobs:
           GH_ASSIGNEE: ${{ github.event.assignee.login }}
           JIRA_USER_MAP: ${{ secrets.JIRA_USER_MAP }}
         run: |
-          set -e
-          [ -z "$JIRA_KEY" ] && exit 0
-          [ -z "$JIRA_USER_MAP" ] && exit 0
-
+          set -Eeuo pipefail
+          [ -z "${JIRA_KEY:-}" ] && exit 0
+          [ -z "${JIRA_USER_MAP:-}" ] && exit 0
           ACCOUNT_ID=$(echo "$JIRA_USER_MAP" | jq -r --arg u "$GH_ASSIGNEE" '.[$u] // empty')
-          [ -z "$ACCOUNT_ID" ] && exit 0
-
+          [ -z "${ACCOUNT_ID:-}" ] && exit 0
           RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
             -X PUT -H "Content-Type: application/json" \
             --data "$(jq -n --arg id "$ACCOUNT_ID" '{accountId:$id}')" \
@@ -244,7 +279,7 @@ jobs:
           [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]
 
       ####################################################################
-      # 7) COMMENT → Mirror to Jira
+      # 8) COMMENT → Jira'ya aynala
       ####################################################################
       - name: Mirror comment to Jira
         if: github.event_name == 'issue_comment' && (github.event.action == 'created' || github.event.action == 'edited')
@@ -254,12 +289,12 @@ jobs:
           CMT_URL: ${{ github.event.comment.html_url }}
           AUTHOR: ${{ github.actor }}
         run: |
-          set -e
-          [ -z "$JIRA_KEY" ] && exit 0
+          set -Eeuo pipefail
+          [ -z "${JIRA_KEY:-}" ] && exit 0
           jq -n \
             --arg author "$AUTHOR" \
             --arg url "$CMT_URL" \
-            --arg cmt "$CMT" \
+            --arg cmt "${CMT:-}" \
             '{
               body:{
                 type:"doc", version:1,
