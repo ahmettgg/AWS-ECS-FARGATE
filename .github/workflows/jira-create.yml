@@ -40,7 +40,7 @@ jobs:
           echo "has_bug=$HAS_BUG" >> "$GITHUB_OUTPUT"
 
       ####################################################################
-      # 1) OPENED → Jira issue oluştur (Backlog)
+      # 1) OPENED → Jira issue (Backlog)
       ####################################################################
       - name: Create Jira issue (on opened)
         id: create
@@ -121,7 +121,7 @@ jobs:
             });
 
       ####################################################################
-      # 2) EDITED → Summary/Description güncelle
+      # 2) EDITED → Summary/Description update
       ####################################################################
       - name: Update Jira on edit
         if: github.event_name == 'issues' && github.event.action == 'edited'
@@ -194,7 +194,7 @@ jobs:
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null || true
 
       ####################################################################
-      # 5) LABELED → To Do / In Progress / Test (In Test destekli)
+      # 5) LABELED → To Do / In Progress / Test
       ####################################################################
       - name: Transition to TO DO (on label todo)
         if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'todo'
@@ -236,7 +236,7 @@ jobs:
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY/transitions" -o /dev/null || true
 
       ####################################################################
-      # 6) LABELED bug → Issue type = Bug (sonradan dönüştür)
+      # 6) LABELED bug → Issue type = Bug  (EOF fix: jq -n)
       ####################################################################
       - name: Convert to Bug (on label bug)
         if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'bug'
@@ -245,13 +245,12 @@ jobs:
         run: |
           set -Eeuo pipefail
           [ -z "${JIRA_KEY:-}" ] && exit 0
-          echo '{"fields":{"issuetype":{"name":"Bug"}}}' > type.json
+          jq -n '{fields:{issuetype:{name:"Bug"}}}' > type.json
           RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
             -X PUT -H "Content-Type: application/json" \
             --data @type.json \
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY")
           CODE="${RESP##*:}"; echo "Type change HTTP $CODE"
-          # Bazı şemalarda issue type değiştirme izni olmayabilir; hata olsa da job'u düşürme:
           if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
             echo "⚠️ Issue type change may be restricted by Jira scheme."
           fi
@@ -279,7 +278,7 @@ jobs:
           [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ]
 
       ####################################################################
-      # 8) COMMENT → Jira'ya aynala
+      # 8) COMMENT → Mirror to Jira
       ####################################################################
       - name: Mirror comment to Jira
         if: github.event_name == 'issue_comment' && (github.event.action == 'created' || github.event.action == 'edited')
