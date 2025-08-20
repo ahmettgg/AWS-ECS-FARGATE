@@ -238,6 +238,18 @@ jobs:
       ####################################################################
       # 6) LABELED bug → Issue type = Bug  (EOF fix: jq -n)
       ####################################################################
+      ####################################################################
+      # 6) LABELED bug → Issue type = Bug
+      ####################################################################
+
+      - name: Debug env (temporary)
+        if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'bug'
+        shell: bash
+        run: |
+          set -x
+          printf 'JIRA_KEY=%q\n' "${{ steps.vars.outputs.jira_key }}"
+          printf 'LABEL=%q\n' "${{ steps.vars.outputs.new_label }}"
+
       - name: Convert to Bug (on label bug)
         if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'bug'
         shell: bash
@@ -250,7 +262,6 @@ jobs:
           set -Eeuo pipefail
           [ -z "${JIRA_KEY:-}" ] && exit 0
 
-          # Güvenli: tek tırnaklı heredoc, hiçbir şey genişlemez
           cat <<'JSON' > type.json
           {
             "fields": {
@@ -261,14 +272,11 @@ jobs:
 
           RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
             -X PUT -H "Content-Type: application/json" \
-            --data @type.json \
+            --data-binary @type.json \
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY")
           CODE="${RESP##*:}"
           echo "Type change HTTP $CODE"
-          if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
-            echo "Issue type change may be restricted by Jira scheme."
-            exit 0
-          fi
+
 
 
       ####################################################################
