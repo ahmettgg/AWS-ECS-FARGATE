@@ -28,16 +28,26 @@ jobs:
 
       - name: Derive vars
         id: vars
+        shell: bash
         run: |
           set -Eeuo pipefail
+
           KEY=$(echo '${{ toJson(github.event.issue.labels) }}' \
             | jq -r '.[]?.name | select(startswith("jira:")) | split(":")[1]' | head -n1)
-          echo "jira_key=$KEY" >> "$GITHUB_OUTPUT"
-          echo "event=${{ github.event_name }}/${{ github.event.action }}" >> "$GITHUB_OUTPUT"
-          echo "new_label=${{ github.event.label.name }}" >> "$GITHUB_OUTPUT"
+
           HAS_BUG=$(echo '${{ toJson(github.event.issue.labels) }}' \
             | jq -r 'map(.name|ascii_downcase) | any(.=="bug")')
-          echo "has_bug=$HAS_BUG" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "jira_key=$KEY"
+            echo "event=${{ github.event_name }}/${{ github.event.action }}"
+            # Güvenli: newline ve tırnakları bozmadan yaz
+            echo 'new_label<<__GH__'
+            echo "${{ github.event.label.name }}"
+            echo '__GH__'
+            echo "has_bug=$HAS_BUG"
+          } >> "$GITHUB_OUTPUT"
+
 
       ####################################################################
       # 1) OPENED → Jira issue (Backlog)
