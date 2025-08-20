@@ -238,7 +238,7 @@ jobs:
       ####################################################################
       # 6) LABELED bug → Issue type = Bug  (EOF fix: jq -n)
       ####################################################################
-            - name: Convert to Bug (on label bug)
+      - name: Convert to Bug (on label bug)
         if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'bug'
         shell: bash
         env:
