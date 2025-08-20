@@ -29,15 +29,25 @@ jobs:
       - name: Derive vars
         id: vars
         run: |
-          set -Eeuo pipefail
-          KEY=$(echo '${{ toJson(github.event.issue.labels) }}' \
-            | jq -r '.[]?.name | select(startswith("jira:")) | split(":")[1]' | head -n1)
-          echo "jira_key=$KEY" >> "$GITHUB_OUTPUT"
-          echo "event=${{ github.event_name }}/${{ github.event.action }}" >> "$GITHUB_OUTPUT"
-          echo "new_label=${{ github.event.label.name }}" >> "$GITHUB_OUTPUT"
-          HAS_BUG=$(echo '${{ toJson(github.event.issue.labels) }}' \
-            | jq -r 'map(.name|ascii_downcase) | any(.=="bug")')
-          echo "has_bug=$HAS_BUG" >> "$GITHUB_OUTPUT"
+          bash -euo pipefail <<'BASH'
+          # jira:<KEY> etiketini çıkar
+          KEY=$(jq -r '.[]?.name | select(startswith("jira:")) | split(":")[1]' <<< '${{ toJson(github.event.issue.labels) }}' | head -n1)
+
+          # event ve yeni eklenen label
+          EVENT='${{ github.event_name }}/${{ github.event.action }}'
+          NEW_LABEL='${{ github.event.label.name }}'
+
+          # bug etiketi var mı?
+          HAS_BUG=$(jq -r 'map(.name|ascii_downcase) | any(.=="bug")' <<< '${{ toJson(github.event.issue.labels) }}')
+
+          {
+          echo "jira_key=${KEY}"
+          echo "event=${EVENT}"
+          echo "new_label=${NEW_LABEL}"
+          echo "has_bug=${HAS_BUG}"
+          } >> "$GITHUB_OUTPUT"
+          BASH
+
 
       ####################################################################
       # 1) OPENED → Jira issue (Backlog)
@@ -243,17 +253,26 @@ jobs:
         env:
           JIRA_KEY: ${{ steps.vars.outputs.jira_key }}
         run: |
-          set -Eeuo pipefail
+          bash -euo pipefail <<'BASH'
           [ -z "${JIRA_KEY:-}" ] && exit 0
+
+          # JSON’u jq ile üret (EOF/quote güvenli)
           jq -n '{fields:{issuetype:{name:"Bug"}}}' > type.json
+
           RESP=$(curl -sS -w ":%{http_code}" -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-            -X PUT -H "Content-Type: application/json" \
-            --data @type.json \
-            "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY")
-          CODE="${RESP##*:}"; echo "Type change HTTP $CODE"
+          -X PUT -H "Content-Type: application/json" \
+          --data @type.json \
+          "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY")
+
+          CODE="${RESP##*:}"
+          echo "Type change HTTP $CODE"
+
+          # Şema izin vermiyorsa hata ile job düşmesin
           if [ "$CODE" -lt 200 ] || [ "$CODE" -ge 300 ]; then
-            echo "⚠️ Issue type change may be restricted by Jira scheme."
+          echo "⚠️ Issue type change may be restricted by Jira scheme."
           fi
+          BASH
+
 
       ####################################################################
       # 7) ASSIGNED → Assignee sync
