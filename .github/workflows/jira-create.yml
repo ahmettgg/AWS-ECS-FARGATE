@@ -29,24 +29,32 @@ jobs:
       - name: Derive vars
         id: vars
         shell: bash
+        env:
+          GH_LABELS_JSON: ${{ toJson(github.event.issue.labels) }}
+          GH_EVENT_NAME:  ${{ github.event_name }}
+          GH_EVENT_ACTION: ${{ github.event.action }}
+          GH_NEW_LABEL:   ${{ github.event.label.name }}
         run: |
           set -Eeuo pipefail
 
-          KEY=$(echo '${{ toJson(github.event.issue.labels) }}' \
-            | jq -r '.[]?.name | select(startswith("jira:")) | split(":")[1]' | head -n1)
+          # Jira key'i label'lardan çıkar (jira:ABC-123)
+          KEY=$(printf '%s' "${GH_LABELS_JSON:-[]}" \
+            | jq -r '.[]? | .name | select(startswith("jira:")) | split(":")[1]' | head -n1)
 
-          HAS_BUG=$(echo '${{ toJson(github.event.issue.labels) }}' \
+          # Issue üzerinde "bug" label'ı var mı?
+          HAS_BUG=$(printf '%s' "${GH_LABELS_JSON:-[]}" \
             | jq -r 'map(.name|ascii_downcase) | any(.=="bug")')
 
           {
-            echo "jira_key=$KEY"
-            echo "event=${{ github.event_name }}/${{ github.event.action }}"
-            # Güvenli: newline ve tırnakları bozmadan yaz
+            echo "jira_key=${KEY}"
+            echo "event=${GH_EVENT_NAME}/${GH_EVENT_ACTION}"
+            # new_label'ı güvenli (multiline) şekilde yaz
             echo 'new_label<<__GH__'
-            echo "${{ github.event.label.name }}"
+            printf '%s\n' "${GH_NEW_LABEL}"
             echo '__GH__'
-            echo "has_bug=$HAS_BUG"
+            echo "has_bug=${HAS_BUG}"
           } >> "$GITHUB_OUTPUT"
+
 
 
       ####################################################################
@@ -248,18 +256,6 @@ jobs:
       ####################################################################
       # 6) LABELED bug → Issue type = Bug  (EOF fix: jq -n)
       ####################################################################
-      ####################################################################
-      # 6) LABELED bug → Issue type = Bug
-      ####################################################################
-
-      - name: Debug env (temporary)
-        if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'bug'
-        shell: bash
-        run: |
-          set -x
-          printf 'JIRA_KEY=%q\n' "${{ steps.vars.outputs.jira_key }}"
-          printf 'LABEL=%q\n' "${{ steps.vars.outputs.new_label }}"
-
       - name: Convert to Bug (on label bug)
         if: github.event_name == 'issues' && github.event.action == 'labeled' && steps.vars.outputs.new_label == 'bug'
         shell: bash
@@ -286,6 +282,7 @@ jobs:
             "$JIRA_BASE_URL/rest/api/3/issue/$JIRA_KEY")
           CODE="${RESP##*:}"
           echo "Type change HTTP $CODE"
+
 
 
 
